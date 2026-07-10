@@ -1,0 +1,43 @@
+# Python version manager
+.python-version
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE / editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.claude/
+
+# Test artifacts
+test-results/
+.coverage
+htmlcov/
+.pytest_cache/
+*.cover
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Symlinks (point to dirs already in the repo)
+data
+model
