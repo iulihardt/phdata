@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import json
@@ -8,13 +10,13 @@ router = APIRouter()
 
 
 class HomeFeatures(BaseModel):
-    bedrooms: int
-    bathrooms: float
-    sqft_living: float
-    sqft_lot: float
-    floors: float
-    sqft_above: float
-    sqft_basement: float
+    bedrooms: Optional[int] = None
+    bathrooms: Optional[float] = None
+    sqft_living: Optional[float] = None
+    sqft_lot: Optional[float] = None
+    floors: Optional[float] = None
+    sqft_above: Optional[float] = None
+    sqft_basement: Optional[float] = None
     zipcode: str
 
 
