@@ -13,6 +13,26 @@ def test_predict_endpoint_integration(http_client, sample_home_features):
 
 
 @pytest.mark.integration
+def test_predict_with_missing_values_integration(http_client, sample_home_features_with_missing):
+    """Test that the live API handles missing values via KNN imputation."""
+    response = http_client.post("/predict", json=sample_home_features_with_missing)
+    assert response.status_code == 200
+    response_data = response.json()
+    assert "predicted_price" in response_data
+    assert response_data["predicted_price"] > 0
+
+
+@pytest.mark.integration
+def test_predict_only_zipcode_integration(http_client):
+    """Test that the live API handles a request with only zipcode provided."""
+    response = http_client.post("/predict", json={"zipcode": "98042"})
+    assert response.status_code == 200
+    response_data = response.json()
+    assert "predicted_price" in response_data
+    assert response_data["predicted_price"] > 0
+
+
+@pytest.mark.integration
 def test_health_endpoint_integration(http_client):
     """Test the /health endpoint via HTTP using httpx client."""
     response = http_client.get("/health")

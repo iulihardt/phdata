@@ -1,8 +1,22 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.endpoints import router as api_router
 
-app = FastAPI()
+from api.endpoints import router as api_router
+from services.imputer import KNNImputerService
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Fit the KNN imputer once at startup so it is ready for every request."""
+    imputer = KNNImputerService()
+    imputer.fit("data/kc_house_data.csv")
+    app.state.imputer = imputer
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
