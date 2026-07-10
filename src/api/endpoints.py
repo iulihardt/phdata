@@ -1,10 +1,8 @@
-import json
-import pickle
 from typing import Optional
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 router = APIRouter()
 
@@ -19,6 +17,13 @@ class HomeFeatures(BaseModel):
     sqft_basement: Optional[float] = None
     zipcode: str
 
+    @field_validator("bedrooms", "bathrooms", "sqft_living", "sqft_lot", "floors", "sqft_above", "sqft_basement")
+    @classmethod
+    def must_be_non_negative(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v < 0:
+            raise ValueError("must be a non-negative number")
+        return v
+
 
 @router.get("/health")
 async def health_check():
@@ -31,28 +36,27 @@ async def health_check():
 
 @router.post("/predict")
 async def predict(home_features: HomeFeatures, request: Request):
-    # Load the model and features
-    with open("model/model.pkl", "rb") as model_file:
-        model = pickle.load(model_file)
+    state = request.app.state
 
-    with open("model/model_features.json") as features_file:
-        model_features = json.load(features_file)
+    input_data = pd.DataFrame([home_features.model_dump()])
 
-    input_data = pd.DataFrame([home_features.dict()])
+    # Impute missing numeric home feature values using the pre-fitted imputer
+    input_data = state.imputer.impute(input_data)
 
-    # Impute any missing numeric home feature values before further processing
-    input_data = request.app.state.imputer.impute(input_data)
+    # Look up demographic data from the in-memory DataFrame
+    demographic_info = (
+        state.demographics[state.demographics["zipcode"] == home_features.zipcode]
+        .drop(columns="zipcode")
+        .reset_index(drop=True)
+    )
 
-    # Load demographic data and merge on zipcode
-    demographics = pd.read_csv("data/zipcode_demographics.csv", dtype={"zipcode": str})
-    demographic_info = demographics[
-        demographics["zipcode"] == home_features.zipcode
-    ].drop(columns="zipcode").reset_index(drop=True)
+    if demographic_info.empty:
+        raise HTTPException(status_code=400, detail="zipcode not found")
 
     input_data = pd.concat([input_data, demographic_info], axis=1)
 
-    # Select model features and predict
-    input_data = input_data[model_features]
-    prediction = model.predict(input_data)
+    # Select model features and predict using the pre-loaded model
+    input_data = input_data[state.model_features]
+    prediction = state.model.predict(input_data)
 
     return {"predicted_price": prediction[0]}

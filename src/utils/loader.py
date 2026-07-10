@@ -1,19 +1,19 @@
-import pickle
 import json
-import os
+import pickle
+
+import pandas as pd
+
 
 def load_model(model_path: str):
-    with open(model_path, 'rb') as model_file:
-        model = pickle.load(model_file)
-    return model
+    with open(model_path, "rb") as model_file:
+        return pickle.load(model_file)
 
-def load_features(features_path: str):
-    with open(features_path, 'r') as features_file:
-        features = json.load(features_file)
-    return features
 
-def get_demographics(zipcode: str, demographics_path: str):
-    import pandas as pd
-    demographics = pd.read_csv(demographics_path)
-    demographic_data = demographics[demographics['zipcode'] == zipcode]
-    return demographic_data.to_dict(orient='records')[0] if not demographic_data.empty else {}
+def load_features(features_path: str) -> list[str]:
+    with open(features_path, "r") as features_file:
+        return json.load(features_file)
+
+
+def load_demographics(demographics_path: str) -> pd.DataFrame:
+    """Load the full demographics CSV into memory, keyed by zipcode string."""
+    return pd.read_csv(demographics_path, dtype={"zipcode": str})
