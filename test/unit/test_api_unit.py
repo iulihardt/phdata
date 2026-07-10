@@ -51,7 +51,7 @@ def test_predict_consistent_without_missing(test_client, sample_home_features):
 
 
 def test_invalid_zipcode_returns_400(test_client):
-    """Invalid zipcode not in demographics data must return 400 with detail message."""
+    """Valid 5-digit zipcode not in demographics data must return 400."""
     response = test_client.post("/predict", json={"zipcode": "00000"})
     assert response.status_code == 400
     assert response.json() == {"detail": "zipcode not found"}
@@ -66,6 +66,8 @@ def test_negative_sqft_living_returns_422(test_client):
     assert response.status_code == 422
     body = response.json()
     assert "detail" in body
+    fields = [e["field"] for e in body["detail"]]
+    assert "sqft_living" in fields
 
 
 def test_negative_bedrooms_returns_422(test_client):
@@ -75,7 +77,10 @@ def test_negative_bedrooms_returns_422(test_client):
         json={"zipcode": "98042", "bedrooms": -3},
     )
     assert response.status_code == 422
-    assert "detail" in response.json()
+    body = response.json()
+    assert "detail" in body
+    fields = [e["field"] for e in body["detail"]]
+    assert "bedrooms" in fields
 
 
 def test_invalid_type_returns_422(test_client):
@@ -93,3 +98,104 @@ def test_empty_body_returns_422(test_client):
     response = test_client.post("/predict", json={})
     assert response.status_code == 422
     assert "detail" in response.json()
+
+
+# --- Input Validation Tests (US-3.2) ---
+
+
+def test_zipcode_format_letters_returns_422(test_client):
+    """Non-numeric zipcode must be rejected."""
+    response = test_client.post("/predict", json={"zipcode": "abcde"})
+    assert response.status_code == 422
+    body = response.json()
+    fields = [e["field"] for e in body["detail"]]
+    assert "zipcode" in fields
+
+
+def test_zipcode_format_too_short_returns_422(test_client):
+    """Zipcode with fewer than 5 digits must be rejected."""
+    response = test_client.post("/predict", json={"zipcode": "9812"})
+    assert response.status_code == 422
+    body = response.json()
+    fields = [e["field"] for e in body["detail"]]
+    assert "zipcode" in fields
+
+
+def test_zipcode_format_too_long_returns_422(test_client):
+    """Zipcode with more than 5 digits must be rejected."""
+    response = test_client.post("/predict", json={"zipcode": "981250"})
+    assert response.status_code == 422
+    body = response.json()
+    fields = [e["field"] for e in body["detail"]]
+    assert "zipcode" in fields
+
+
+def test_zero_sqft_living_returns_422(test_client):
+    """Zero sqft_living must be rejected (gt=0 constraint)."""
+    response = test_client.post(
+        "/predict",
+        json={"zipcode": "98042", "sqft_living": 0},
+    )
+    assert response.status_code == 422
+    body = response.json()
+    fields = [e["field"] for e in body["detail"]]
+    assert "sqft_living" in fields
+
+
+def test_zero_floors_returns_422(test_client):
+    """Zero floors must be rejected (gt=0 constraint)."""
+    response = test_client.post(
+        "/predict",
+        json={"zipcode": "98042", "floors": 0},
+    )
+    assert response.status_code == 422
+    body = response.json()
+    fields = [e["field"] for e in body["detail"]]
+    assert "floors" in fields
+
+
+def test_zero_bedrooms_accepted(test_client):
+    """Zero bedrooms is valid (studio apartments)."""
+    response = test_client.post(
+        "/predict",
+        json={"zipcode": "98042", "bedrooms": 0},
+    )
+    assert response.status_code == 200
+
+
+def test_zero_sqft_basement_accepted(test_client):
+    """Zero sqft_basement is valid (no basement)."""
+    response = test_client.post(
+        "/predict",
+        json={"zipcode": "98042", "sqft_basement": 0},
+    )
+    assert response.status_code == 200
+
+
+def test_validation_error_format_is_consistent(test_client):
+    """Every validation error entry must have 'field' and 'message' keys."""
+    response = test_client.post(
+        "/predict",
+        json={"zipcode": "98042", "bedrooms": -1, "sqft_living": -50},
+    )
+    assert response.status_code == 422
+    body = response.json()
+    assert "detail" in body
+    assert isinstance(body["detail"], list)
+    for entry in body["detail"]:
+        assert "field" in entry
+        assert "message" in entry
+
+
+def test_multiple_validation_errors_returned(test_client):
+    """Multiple invalid fields should produce multiple error entries."""
+    response = test_client.post(
+        "/predict",
+        json={"zipcode": "98042", "bedrooms": -1, "sqft_living": -50},
+    )
+    assert response.status_code == 422
+    body = response.json()
+    assert len(body["detail"]) >= 2
+    fields = {e["field"] for e in body["detail"]}
+    assert "bedrooms" in fields
+    assert "sqft_living" in fields
