@@ -444,3 +444,110 @@ def test_reverse_geocode_missing_params(test_client):
     """Missing lat/lon query parameters return 422."""
     response = test_client.get("/reverse-geocode")
     assert response.status_code == 422
+
+
+# ---- US-6.3: Batch Prediction ----
+
+
+def test_predict_batch_happy_path(test_client, sample_home_features):
+    """Batch of valid properties returns predictions in input order."""
+    other = {**sample_home_features, "zipcode": "98125", "bedrooms": 4}
+    response = test_client.post(
+        "/predict/batch",
+        json={"properties": [sample_home_features, other]},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 2
+    assert body["successful"] == 2
+    assert body["failed"] == 0
+    assert len(body["predictions"]) == 2
+    assert body["predictions"][0]["index"] == 0
+    assert body["predictions"][0]["status"] == "success"
+    assert body["predictions"][0]["predicted_price"] > 0
+    assert body["predictions"][1]["index"] == 1
+    assert body["predictions"][1]["status"] == "success"
+
+
+def test_predict_batch_with_missing_values(test_client, sample_home_features_with_missing):
+    """Batch items with null fields still succeed via KNN imputation."""
+    response = test_client.post(
+        "/predict/batch",
+        json={"properties": [sample_home_features_with_missing]},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["successful"] == 1
+    assert body["predictions"][0]["status"] == "success"
+    assert body["predictions"][0]["predicted_price"] > 0
+
+
+def test_predict_batch_mixed_valid_invalid(test_client, sample_home_features):
+    """Invalid zipcode and schema errors are per-item; valid rows still succeed."""
+    response = test_client.post(
+        "/predict/batch",
+        json={
+            "properties": [
+                sample_home_features,
+                {"zipcode": "00000"},
+                {"zipcode": "98042", "sqft_living": -100.0},
+                {**sample_home_features, "zipcode": "98125"},
+            ]
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 4
+    assert body["successful"] == 2
+    assert body["failed"] == 2
+
+    preds = body["predictions"]
+    assert preds[0]["status"] == "success"
+    assert preds[0]["predicted_price"] > 0
+
+    assert preds[1]["status"] == "error"
+    assert preds[1]["predicted_price"] is None
+    assert preds[1]["error"] == "zipcode not found"
+
+    assert preds[2]["status"] == "error"
+    assert preds[2]["predicted_price"] is None
+    assert "sqft_living" in preds[2]["error"]
+
+    assert preds[3]["status"] == "success"
+    assert preds[3]["index"] == 3
+
+
+def test_predict_batch_empty(test_client):
+    """Empty properties list returns an empty result set."""
+    response = test_client.post("/predict/batch", json={"properties": []})
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "predictions": [],
+        "total": 0,
+        "successful": 0,
+        "failed": 0,
+    }
+
+
+def test_predict_batch_exceeds_max_size(test_client, sample_home_features):
+    """Batch larger than MAX_BATCH_SIZE (100) returns 400."""
+    payload = {"properties": [sample_home_features] * 101}
+    response = test_client.post("/predict/batch", json=payload)
+    assert response.status_code == 400
+    assert "100" in response.json()["detail"]
+
+
+def test_predict_batch_matches_single_predict(test_client, sample_home_features):
+    """Batch prediction for one item matches the single /predict endpoint."""
+    single = test_client.post("/predict", json=sample_home_features)
+    batch = test_client.post(
+        "/predict/batch",
+        json={"properties": [sample_home_features]},
+    )
+    assert single.status_code == 200
+    assert batch.status_code == 200
+    assert (
+        single.json()["predicted_price"]
+        == batch.json()["predictions"][0]["predicted_price"]
+    )

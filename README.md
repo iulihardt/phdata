@@ -96,7 +96,105 @@ docker logs housing-api
 
 ## Usage
 
-To get predictions from the model, send a POST request to the `/predict` endpoint with the required features in JSON format. The API will return the predicted home price along with any additional metadata.
+### Single prediction — `POST /predict`
+
+Send home features as JSON. Optional numeric fields may be `null` (KNN imputation fills them). `zipcode` is always required.
+
+```bash
+curl -X POST http://127.0.0.1:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "bedrooms": 3,
+    "bathrooms": 2.5,
+    "sqft_living": 2000,
+    "sqft_lot": 5000,
+    "floors": 2,
+    "sqft_above": 1500,
+    "sqft_basement": 500,
+    "zipcode": "98125"
+  }'
+```
+
+Response:
+```json
+{"predicted_price": 450000.0}
+```
+
+### Batch prediction — `POST /predict/batch`
+
+Submit multiple properties in one request (max **100** items). Results keep input order. Invalid items return per-item errors without failing the whole batch; an empty list returns an empty result.
+
+```bash
+curl -X POST http://127.0.0.1:8000/predict/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "properties": [
+      {
+        "bedrooms": 3,
+        "bathrooms": 2.5,
+        "sqft_living": 2000,
+        "sqft_lot": 5000,
+        "floors": 2,
+        "sqft_above": 1500,
+        "sqft_basement": 500,
+        "zipcode": "98125"
+      },
+      {
+        "bedrooms": null,
+        "bathrooms": 1.0,
+        "sqft_living": 1200,
+        "sqft_lot": null,
+        "floors": 1,
+        "sqft_above": 1200,
+        "sqft_basement": 0,
+        "zipcode": "98042"
+      },
+      {
+        "bedrooms": 4,
+        "bathrooms": 3.0,
+        "sqft_living": 2800,
+        "sqft_lot": 7000,
+        "floors": 2,
+        "sqft_above": 2200,
+        "sqft_basement": 600,
+        "zipcode": "98052"
+      },
+      {
+        "bedrooms": 2,
+        "bathrooms": 1.0,
+        "sqft_living": 900,
+        "sqft_lot": 3000,
+        "floors": 1,
+        "sqft_above": 900,
+        "sqft_basement": 0,
+        "zipcode": "98115"
+      },
+      {
+        "bedrooms": 5,
+        "bathrooms": 3.5,
+        "sqft_living": 3500,
+        "sqft_lot": 10000,
+        "floors": 2,
+        "sqft_above": 2800,
+        "sqft_basement": 700,
+        "zipcode": "98004"
+      }
+    ]
+  }'
+```
+
+Response shape:
+```json
+{
+  "predictions": [
+    {"index": 0, "predicted_price": 450000.0, "status": "success"},
+    {"index": 1, "predicted_price": 285000.0, "status": "success"}
+  ],
+  "total": 2,
+  "successful": 2,
+  "failed": 0
+}
+```
 
 ## Testing
 

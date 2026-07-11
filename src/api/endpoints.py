@@ -1,12 +1,14 @@
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+MAX_BATCH_SIZE = 100
 
 
 class HomeFeatures(BaseModel):
@@ -55,6 +57,62 @@ class HomeFeatures(BaseModel):
     )
 
 
+class BatchRequest(BaseModel):
+    """Batch of property feature payloads for portfolio-style prediction."""
+
+    properties: list[dict[str, Any]] = Field(
+        ...,
+        description="List of home feature objects (same schema as /predict)",
+        examples=[
+            [
+                {
+                    "bedrooms": 3,
+                    "bathrooms": 2.5,
+                    "sqft_living": 2000,
+                    "sqft_lot": 5000,
+                    "floors": 2,
+                    "sqft_above": 1500,
+                    "sqft_basement": 500,
+                    "zipcode": "98125",
+                },
+                {
+                    "bedrooms": None,
+                    "bathrooms": 1.0,
+                    "sqft_living": 1200,
+                    "sqft_lot": None,
+                    "floors": 1,
+                    "sqft_above": 1200,
+                    "sqft_basement": 0,
+                    "zipcode": "98042",
+                },
+            ]
+        ],
+    )
+
+
+class BatchPredictionItem(BaseModel):
+    index: int
+    predicted_price: Optional[float] = None
+    status: str
+    error: Optional[str] = None
+
+
+class BatchResponse(BaseModel):
+    predictions: list[BatchPredictionItem]
+    total: int
+    successful: int
+    failed: int
+
+
+def _format_validation_error(exc: ValidationError) -> str:
+    """Format a Pydantic ValidationError like the single-/predict 422 detail."""
+    parts = []
+    for err in exc.errors():
+        field = ".".join(str(p) for p in err["loc"])
+        parts.append(f"{field}: {err['msg']}")
+    return "; ".join(parts)
+
+
 @router.get("/health")
 async def health_check():
     """Health check endpoint for container orchestration."""
@@ -85,3 +143,61 @@ async def predict(home_features: HomeFeatures, request: Request):
         price,
     )
     return {"predicted_price": price}
+
+
+@router.post("/predict/batch", response_model=BatchResponse)
+async def predict_batch(batch: BatchRequest, request: Request):
+    """
+    Predict prices for multiple properties in one request.
+
+    Invalid items (schema or unknown zipcode) return per-item errors without
+    failing the whole batch. Empty batches return an empty result set.
+    """
+    if len(batch.properties) > MAX_BATCH_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Batch size {len(batch.properties)} exceeds maximum of {MAX_BATCH_SIZE}",
+        )
+
+    prediction_service = request.app.state.prediction_service
+
+    results: list[dict] = [None] * len(batch.properties)  # type: ignore[list-item]
+    valid_rows: list[tuple[int, dict]] = []
+
+    for idx, raw in enumerate(batch.properties):
+        try:
+            features = HomeFeatures.model_validate(raw)
+        except ValidationError as exc:
+            results[idx] = {
+                "index": idx,
+                "predicted_price": None,
+                "status": "error",
+                "error": _format_validation_error(exc),
+            }
+            continue
+        valid_rows.append((idx, features.model_dump()))
+
+    if valid_rows:
+        batch_results = prediction_service.predict_batch(
+            [row for _, row in valid_rows]
+        )
+        for (orig_idx, _), item in zip(valid_rows, batch_results):
+            item["index"] = orig_idx
+            results[orig_idx] = item
+
+    successful = sum(1 for r in results if r and r["status"] == "success")
+    failed = len(results) - successful
+
+    logger.info(
+        "Batch prediction complete: total=%d successful=%d failed=%d",
+        len(results),
+        successful,
+        failed,
+    )
+
+    return {
+        "predictions": results,
+        "total": len(results),
+        "successful": successful,
+        "failed": failed,
+    }
