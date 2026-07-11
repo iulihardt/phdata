@@ -1,7 +1,10 @@
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -63,12 +66,22 @@ async def predict(home_features: HomeFeatures, request: Request):
     """Accept home features and return a predicted price."""
     prediction_service = request.app.state.prediction_service
 
+    data = home_features.model_dump()
+    has_missing = any(v is None for k, v in data.items() if k != "zipcode")
+
     try:
         price = prediction_service.predict(
-            home_data=home_features.model_dump(),
+            home_data=data,
             zipcode=home_features.zipcode,
         )
     except ValueError as exc:
+        logger.warning("Prediction failed for zipcode=%s: %s", home_features.zipcode, exc)
         raise HTTPException(status_code=400, detail="zipcode not found") from exc
 
+    logger.info(
+        "Prediction complete: zipcode=%s imputation_used=%s predicted_price=%.2f",
+        home_features.zipcode,
+        has_missing,
+        price,
+    )
     return {"predicted_price": price}

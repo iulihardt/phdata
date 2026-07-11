@@ -1,4 +1,10 @@
+from __future__ import annotations
+
 import logging
+import os
+import re
+import time
+import traceback
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -11,8 +17,12 @@ from services.imputer import KNNImputerService
 from services.predictor import PredictionService
 from utils.loader import load_demographics, load_features, load_model
 
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
 @asynccontextmanager
@@ -54,6 +64,31 @@ app = FastAPI(
 )
 
 
+_VALID_JSON_VALUE = re.compile(
+    r'^("|\d|-|true|false|null|\[|\{)'
+)
+
+
+def _find_all_invalid_fields(raw_body: bytes) -> list[dict]:
+    """Scan raw body text for all fields with values that are not valid JSON tokens."""
+    try:
+        text = raw_body.decode("utf-8") if isinstance(raw_body, bytes) else raw_body
+    except (UnicodeDecodeError, AttributeError):
+        return [{"field": "unknown", "message": "JSON decode error"}]
+
+    errors = []
+    for match in re.finditer(r'"(\w+)"\s*:\s*(.+)', text):
+        field_name = match.group(1)
+        raw_value = match.group(2).rstrip().rstrip(",")
+        if not _VALID_JSON_VALUE.match(raw_value.strip()):
+            errors.append({
+                "field": field_name,
+                "message": f"Invalid value: {raw_value.strip()}",
+            })
+
+    return errors or [{"field": "unknown", "message": "JSON decode error"}]
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(
     request: Request, exc: RequestValidationError
@@ -61,9 +96,64 @@ async def validation_exception_handler(
     """Return a clean, consistent error format for all validation failures."""
     errors = []
     for err in exc.errors():
-        field = ".".join(str(loc) for loc in err["loc"] if loc != "body")
-        errors.append({"field": field, "message": err["msg"]})
+        loc_parts = [p for p in err["loc"] if p != "body"]
+
+        if err.get("type") == "json_invalid" and exc.body:
+            errors.extend(_find_all_invalid_fields(exc.body))
+            break
+        else:
+            field = ".".join(str(p) for p in loc_parts)
+            errors.append({"field": field, "message": err["msg"]})
+
     return JSONResponse(status_code=422, content={"detail": errors})
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch any unhandled exception, log traceback, and return a clean 500 JSON."""
+    logger.error(
+        "Unhandled exception on %s %s: %s",
+        request.method,
+        request.url.path,
+        exc,
+    )
+    logger.debug("Traceback:\n%s", traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    """Log every request with endpoint and timing; catch unhandled exceptions."""
+    start = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        logger.error(
+            "Unhandled exception on %s %s (%.1fms): %s",
+            request.method,
+            request.url.path,
+            elapsed_ms,
+            exc,
+        )
+        logger.debug("Traceback:\n%s", traceback.format_exc())
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"},
+        )
+
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    logger.info(
+        "method=%s path=%s status=%d duration_ms=%.1f",
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed_ms,
+    )
+    return response
 
 
 app.add_middleware(
