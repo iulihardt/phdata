@@ -326,3 +326,121 @@ def test_predict_logs_no_imputation(test_client, sample_home_features, caplog):
     with caplog.at_level(logging.INFO, logger="api.endpoints"):
         test_client.post("/predict", json=sample_home_features)
     assert any("imputation_used=False" in record.message for record in caplog.records)
+
+
+# --- Interactive Map Tests (US-6.1) ---
+
+
+def test_directmap_page_loads(test_client):
+    """GET /directmap returns 200 with an HTML page containing the map container."""
+    response = test_client.get("/directmap")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert 'id="map"' in response.text
+
+
+def test_directmap_contains_leaflet(test_client):
+    """The /directmap page includes the Leaflet JS and CSS dependencies."""
+    response = test_client.get("/directmap")
+    assert response.status_code == 200
+    assert "leaflet.js" in response.text
+    assert "leaflet.css" in response.text
+
+
+def test_reverse_geocode_success(test_client, monkeypatch):
+    """GET /reverse-geocode returns parsed ZIP/city/state from a mocked Nominatim response."""
+    import httpx
+
+    nominatim_payload = {
+        "address": {
+            "postcode": "98101",
+            "city": "Seattle",
+            "state": "Washington",
+            "country": "United States",
+        }
+    }
+
+    class MockResponse:
+        status_code = 200
+
+        def json(self):
+            return nominatim_payload
+
+        def raise_for_status(self):
+            pass
+
+    class MockAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def get(self, url, **kwargs):
+            return MockResponse()
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: MockAsyncClient())
+
+    response = test_client.get("/reverse-geocode?lat=47.6062&lon=-122.3321")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["zipcode"] == "98101"
+    assert data["city"] == "Seattle"
+    assert data["state"] == "Washington"
+
+
+def test_reverse_geocode_no_postcode(test_client, monkeypatch):
+    """Returns 404 when Nominatim response has no postcode (e.g. ocean click)."""
+    import httpx
+
+    class MockResponse:
+        status_code = 200
+
+        def json(self):
+            return {"address": {"country": "United States"}}
+
+        def raise_for_status(self):
+            pass
+
+    class MockAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def get(self, url, **kwargs):
+            return MockResponse()
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: MockAsyncClient())
+
+    response = test_client.get("/reverse-geocode?lat=30.0&lon=-90.0")
+    assert response.status_code == 404
+    assert "ZIP" in response.json()["detail"]
+
+
+def test_reverse_geocode_timeout(test_client, monkeypatch):
+    """Returns 502 when Nominatim times out."""
+    import httpx
+
+    class MockAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def get(self, url, **kwargs):
+            raise httpx.TimeoutException("read timed out")
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: MockAsyncClient())
+
+    response = test_client.get("/reverse-geocode?lat=47.6&lon=-122.3")
+    assert response.status_code == 502
+    assert "timeout" in response.json()["detail"].lower()
+
+
+def test_reverse_geocode_missing_params(test_client):
+    """Missing lat/lon query parameters return 422."""
+    response = test_client.get("/reverse-geocode")
+    assert response.status_code == 422

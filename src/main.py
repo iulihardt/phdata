@@ -6,13 +6,17 @@ import re
 import time
 import traceback
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 from api.endpoints import router as api_router
+from api.web import router as web_router
 from services.imputer import KNNImputerService
 from services.predictor import PredictionService
 from utils.loader import load_demographics, load_features, load_model
@@ -165,6 +169,12 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
+
+_BASE_DIR = Path(__file__).resolve().parent
+templates = Jinja2Templates(directory=str(_BASE_DIR / "templates"))
+app.state.templates = templates
+app.mount("/static", StaticFiles(directory=str(_BASE_DIR / "static")), name="static")
+app.include_router(web_router)
 
 if __name__ == "__main__":
     import uvicorn
