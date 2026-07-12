@@ -1,104 +1,161 @@
-# FastAPI Machine Learning Model Deployment
+# Sound Realty — Home Price Prediction API
 
-This project implements a RESTful API using FastAPI to deploy a machine learning model for predicting home prices based on various features. The model is trained on real estate data and can provide predictions based on user input.
+A production-oriented RESTful API (FastAPI + Docker) that estimates home values in the
+Seattle / King County area. The service wraps a pre-trained scikit-learn model
+(`KNeighborsRegressor` + `RobustScaler`) and adds the capabilities needed to run it
+reliably against real-world, often-incomplete data:
+
+- **Missing-data handling** via KNN imputation — clients can omit any numeric field.
+- **Single and batch prediction** endpoints.
+- **Startup preloading** of all resources — zero disk I/O per request.
+- **Input validation** with clear, consistent error messages and auto-generated Swagger docs.
+- **Structured logging** and global error handling for production observability.
+- **Interactive map UI** (`/directmap`) to estimate prices by clicking a location.
+
+## What's Implemented
+
+The work is tracked as user stories under `AGIL/`. The following are delivered and running:
+
+| Area | Capability | Story |
+|------|-----------|-------|
+| Missing data | Nullable schema (all fields optional except `zipcode`) | US-1.1 |
+| Missing data | KNN imputation service, fitted at startup | US-1.2 |
+| Missing data | Edge-case handling (invalid zipcode, all-nulls, bad types) | US-1.3 |
+| Performance | Model, features, demographics & imputer preloaded once at startup | US-2.1 |
+| Code quality | Refactor into `services/` layer, pinned dependencies | US-3.1 |
+| Code quality | Declarative Pydantic validation + Swagger constraints/examples | US-3.2 |
+| Code quality | Structured logging + global exception handling | US-3.3 |
+| Value-add | Interactive map page + reverse geocoding | US-6.1 |
+| Value-add | Batch prediction endpoint (`/predict/batch`) | US-6.3 |
+
+A latency benchmark script is also included (`test/benchmark_api.py`), see [Benchmark](#benchmark).
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/health` | Health check for container orchestration |
+| `POST` | `/predict` | Predict the price of a single property |
+| `POST` | `/predict/batch` | Predict prices for up to 100 properties in one request |
+| `GET`  | `/directmap` | Interactive Leaflet map UI for point-and-click estimation |
+| `GET`  | `/reverse-geocode` | Resolve a lat/lon into ZIP / city / state (Nominatim proxy) |
+| `GET`  | `/docs` | Interactive OpenAPI (Swagger) documentation |
 
 ## Project Structure
 
 ```
-mle-project-challenge-2026
+phdata-mle-project-challenge-2026
 ├── src
-│   ├── main.py                # Entry point for the FastAPI application
+│   ├── main.py                     # App wiring: lifespan preloading, logging, error handlers, CORS, routers
 │   ├── api
-│   │   └── endpoints.py       # API endpoints for predictions
+│   │   ├── endpoints.py            # HTTP layer: /health, /predict, /predict/batch + Pydantic models
+│   │   └── web.py                  # HTTP layer: /directmap, /reverse-geocode
+│   ├── services
+│   │   ├── imputer.py              # KNNImputerService (KNN imputation of missing features)
+│   │   └── predictor.py            # PredictionService (impute → merge demographics → predict)
+│   ├── utils
+│   │   └── loader.py               # Resource loaders (model, features, demographics)
+│   ├── templates
+│   │   └── directmap.html          # Jinja2 template for the map UI
+│   ├── static
+│   │   ├── css/directmap.css       # Map UI styles
+│   │   └── js/directmap.js         # Leaflet map, geocoding, debounced prediction
 │   ├── model
-│   │   ├── model.pkl          # Serialized machine learning model
-│   │   └── model_features.json # Features required for predictions
-│   ├── data
-│   │   ├── kc_house_data.csv  # Training data for the model
-│   │   ├── zipcode_demographics.csv # Demographic data for predictions
-│   │   └── future_unseen_examples.csv # Examples for testing the API
-│   └── utils
-│       └── loader.py          # Utility functions for loading the model
-├── requirements.txt            # Project dependencies
-├── Dockerfile                  # Docker instructions for deployment
-├── README.md                   # Project documentation
-└── test
-    └── test_api.py            # Test cases for the API
+│   │   ├── create_model.py         # Trains the model and exports artifacts
+│   │   ├── Dockerfile              # Image used to (re)generate model artifacts
+│   │   ├── model.pkl               # Serialized ML model (generated)
+│   │   └── model_features.json     # Feature order expected by the model (generated)
+│   └── data
+│       ├── kc_house_data.csv       # Historical sales (used to fit the imputer)
+│       ├── zipcode_demographics.csv# Demographic features joined at prediction time
+│       └── future_unseen_examples.csv
+├── test
+│   ├── unit/                       # In-process TestClient tests (fast)
+│   ├── integration/                # Tests against a live API container
+│   ├── conftest.py                 # Shared fixtures
+│   └── benchmark_api.py            # Latency/throughput benchmark script
+├── requirements.txt                # Runtime dependencies (pinned)
+├── requirements-test.txt           # Test-only dependencies
+├── Dockerfile                      # API image
+├── Dockerfile.test                 # Test image
+├── docker-compose.test.yml         # Integration test orchestration
+├── Makefile                        # Test shortcuts
+└── README.md
 ```
 
 ## Setup Instructions
 
 ### Prerequisites
 
-- Docker installed on your system
+- Docker installed and running
 - Git (for cloning the repository)
 
 ### Step 1: Clone the Repository
 
 ```bash
 git clone <repository-url>
-cd mle-project-challenge-2026
+cd phdata-mle-project-challenge-2026
 ```
 
 ### Step 2: Generate Model Artifacts (First Time Only)
 
-Before running the API, you need to generate the model files. This only needs to be done once, or when you want to retrain the model.
+The API needs `model.pkl` and `model_features.json` in `src/model/`. These are produced by
+the training script. This step only needs to be run once (or whenever you want to retrain).
 
-**Build the model creation Docker image:**
+**Build the model-creation image:**
 ```bash
 docker build -f src/model/Dockerfile -t create-model .
 ```
 
-**Run the container to generate model artifacts:**
+**Run the container to generate the artifacts:**
 ```bash
 docker run --rm -v "$(pwd)/src/model:/app/model" create-model
 ```
 
-This will create `model.pkl` and `model_features.json` in the `src/model/` directory.
-
 ### Step 3: Build and Run the API
 
-**Build the API Docker image:**
+**Build the API image:**
 ```bash
-docker build -t mle-project-challenge-2026 .
+docker build -t phdata-mle-api .
 ```
 
 **Run the API container:**
 ```bash
-docker run -d -p 8000:8000 --name housing-api mle-project-challenge-2026
+docker run -d -p 8000:8000 --name housing-api phdata-mle-api
 ```
 
 ### Step 4: Access the API
 
-Open your browser and go to `http://127.0.0.1:8000/docs` to view the interactive API documentation.
+- Interactive docs (Swagger): `http://127.0.0.1:8000/docs`
+- Interactive map UI: `http://127.0.0.1:8000/directmap`
+- Health check: `http://127.0.0.1:8000/health`
 
 ### Managing the Container
 
-**Stop the container:**
 ```bash
-docker stop housing-api
+docker stop housing-api      # Stop
+docker start housing-api     # Start again
+docker rm housing-api        # Remove
+docker logs housing-api      # View logs (includes startup resource-loading messages)
 ```
 
-**Start the container again:**
-```bash
-docker start housing-api
-```
+## Configuration
 
-**Remove the container:**
-```bash
-docker rm housing-api
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOG_LEVEL` | `INFO` | Logging verbosity: `DEBUG`, `INFO`, `WARNING`, or `ERROR` |
 
-**View container logs:**
+Example:
 ```bash
-docker logs housing-api
+docker run -d -p 8000:8000 -e LOG_LEVEL=DEBUG --name housing-api phdata-mle-api
 ```
 
 ## Usage
 
 ### Single prediction — `POST /predict`
 
-Send home features as JSON. Optional numeric fields may be `null` (KNN imputation fills them). `zipcode` is always required.
+Send home features as JSON. Any numeric field may be `null` (or omitted) — KNN imputation
+fills the gaps before prediction. `zipcode` is always required and must be a 5-digit string.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/predict \
@@ -120,9 +177,16 @@ Response:
 {"predicted_price": 450000.0}
 ```
 
+**Error behavior:**
+- Malformed input (negative values, non-numeric types, bad zipcode format) → `422` with
+  `{"detail": [{"field": "...", "message": "..."}]}`.
+- Valid-format zipcode not in the coverage area → `400` with `{"detail": "zipcode not found"}`.
+
 ### Batch prediction — `POST /predict/batch`
 
-Submit multiple properties in one request (max **100** items). Results keep input order. Invalid items return per-item errors without failing the whole batch; an empty list returns an empty result.
+Submit multiple properties in one request (max **100** items). Results keep the input order.
+Invalid items return per-item errors without failing the whole batch; an empty list returns an
+empty result.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/predict/batch \
@@ -148,36 +212,6 @@ curl -X POST http://127.0.0.1:8000/predict/batch \
         "sqft_above": 1200,
         "sqft_basement": 0,
         "zipcode": "98042"
-      },
-      {
-        "bedrooms": 4,
-        "bathrooms": 3.0,
-        "sqft_living": 2800,
-        "sqft_lot": 7000,
-        "floors": 2,
-        "sqft_above": 2200,
-        "sqft_basement": 600,
-        "zipcode": "98052"
-      },
-      {
-        "bedrooms": 2,
-        "bathrooms": 1.0,
-        "sqft_living": 900,
-        "sqft_lot": 3000,
-        "floors": 1,
-        "sqft_above": 900,
-        "sqft_basement": 0,
-        "zipcode": "98115"
-      },
-      {
-        "bedrooms": 5,
-        "bathrooms": 3.5,
-        "sqft_living": 3500,
-        "sqft_lot": 10000,
-        "floors": 2,
-        "sqft_above": 2800,
-        "sqft_basement": 700,
-        "zipcode": "98004"
       }
     ]
   }'
@@ -187,8 +221,8 @@ Response shape:
 ```json
 {
   "predictions": [
-    {"index": 0, "predicted_price": 450000.0, "status": "success"},
-    {"index": 1, "predicted_price": 285000.0, "status": "success"}
+    {"index": 0, "predicted_price": 450000.0, "status": "success", "error": null},
+    {"index": 1, "predicted_price": 285000.0, "status": "success", "error": null}
   ],
   "total": 2,
   "successful": 2,
@@ -196,182 +230,108 @@ Response shape:
 }
 ```
 
+A failed item looks like:
+```json
+{"index": 1, "predicted_price": null, "status": "error", "error": "zipcode not found"}
+```
+
+### Interactive map — `GET /directmap`
+
+Open `http://127.0.0.1:8000/directmap` in a browser. Click (or drag the marker) anywhere on the
+map to set a location; the ZIP code is resolved automatically via reverse geocoding and the price
+prediction updates in real time as you adjust the property sliders (no "Predict" button needed).
+
+> Notes:
+> - The model only covers King County (Seattle-area) ZIP codes. Clicks outside this region show a
+>   clear "ZIP code not supported" message.
+> - Reverse geocoding proxies the free Nominatim/OpenStreetMap service, so the container needs
+>   outbound internet access for the map page to resolve ZIP codes.
+
+## How Prediction Works
+
+1. The request payload is validated against the `HomeFeatures` schema.
+2. Missing numeric features are filled by a `KNNImputer(n_neighbors=5, weights="distance")`
+   fitted once at startup on `kc_house_data.csv`.
+3. Demographic features for the property's ZIP code are joined from `zipcode_demographics.csv`.
+4. Columns are ordered to match `model_features.json` and passed to the model for prediction.
+
+All resources (model, feature list, demographics, fitted imputer) are loaded **once at startup**
+and held in memory, so requests incur no disk I/O.
+
 ## Testing
 
-This project uses Docker-based testing to ensure environment consistency between testing and production. All tests run inside Docker containers, eliminating "works on my machine" issues.
+The project uses Docker-based testing for environment parity between development and production.
 
 ### Quick Start
 
-Run unit tests (fast, recommended for development):
 ```bash
-make test-unit
-```
-
-Run integration tests (full environment):
-```bash
-make test-integration
-```
-
-Run all tests:
-```bash
-make test-all
+make test-unit          # Fast, in-process unit tests
+make test-integration   # Full-environment integration tests (Docker Compose)
+make test-all           # Both suites
+make clean              # Remove test containers and artifacts
 ```
 
 ### Test Types
 
 **Unit Tests** (`test/unit/`)
-- Use FastAPI TestClient for in-process testing
-- No external dependencies or containers required
-- Fast execution (typically under 30 seconds)
-- Ideal for rapid development iteration
+- Use FastAPI `TestClient` for in-process testing (no external containers).
+- Fast execution; ideal for rapid iteration.
+- Cover prediction happy paths, imputation, edge cases, validation, batch behavior,
+  the map page, and reverse geocoding (external services mocked).
 
 **Integration Tests** (`test/integration/`)
-- Test against a real running API container
-- Verify end-to-end functionality via HTTP requests
-- Ensure Docker networking and orchestration work correctly
-- More comprehensive but slower execution
+- Run against a real API container brought up via `docker-compose.test.yml`.
+- Verify end-to-end behavior over HTTP, including Docker networking and health checks.
 
-### Running Tests
+### Coverage Reports
 
-#### Unit Tests Only
-
-```bash
-make test-unit
-```
-
-This command:
-- Builds the test Docker image
-- Runs only tests in `test/unit/` directory
-- Generates coverage reports
-- Completes quickly without starting the full API container
-
-#### Integration Tests Only
-
-```bash
-make test-integration
-```
-
-This command:
-- Builds both API and test containers using Docker Compose
-- Starts the API container and waits for health check
-- Runs tests in `test/integration/` directory
-- Automatically stops and removes containers when complete
-
-#### All Tests
-
-```bash
-make test-all
-```
-
-Runs both integration and unit tests for comprehensive validation.
-
-### Viewing Coverage Reports
-
-After running tests, coverage reports are generated in the `test-results/` directory:
-
-**HTML Coverage Report:**
+After running tests, an HTML coverage report is generated under `test-results/`:
 ```bash
 open test-results/coverage/index.html
 ```
-
-**Terminal Coverage Summary:**
-Coverage is automatically displayed in the terminal after test execution.
+A terminal coverage summary is also printed after each run.
 
 ### Running Specific Tests
 
-Run a specific test file:
 ```bash
+# A specific file
 docker run --rm ml-api-test pytest test/unit/test_api_unit.py -v
+
+# Tests matching a pattern
+docker run --rm ml-api-test pytest -k "batch" -v
 ```
 
-Run a specific test function:
+## Benchmark
+
+`test/benchmark_api.py` sends N requests to `/predict` and reports latency percentiles
+(min / mean / p50 / p95 / p99 / max) and throughput. Run it against a running API container:
+
 ```bash
-docker run --rm ml-api-test pytest test/unit/test_api_unit.py::test_predict_endpoint -v
+# Ensure the API is running on http://localhost:8000, then:
+python test/benchmark_api.py -n 100
 ```
 
-Run tests matching a pattern:
-```bash
-docker run --rm ml-api-test pytest -k "predict" -v
-```
+## Troubleshooting
 
-### Troubleshooting
+**"Cannot connect to the Docker daemon"** — Ensure Docker is running (`docker ps`).
 
-**Issue: "Cannot connect to the Docker daemon"**
-
-Solution: Ensure Docker is running on your system.
-```bash
-docker ps  # Should list running containers without error
-```
-
-**Issue: Integration tests fail with connection errors**
-
-Solution: Check if the API container is healthy.
+**Integration tests fail with connection errors** — Check the API container health:
 ```bash
 docker-compose -f docker-compose.test.yml up
-# In another terminal:
-docker-compose -f docker-compose.test.yml ps
 docker-compose -f docker-compose.test.yml logs api
 ```
 
-**Issue: Tests pass locally but fail in Docker**
-
-Solution: This usually indicates environment differences. Check:
-- Model artifacts exist in `model/` directory
-- Data files exist in `data/` directory
-- All dependencies are listed in `requirements.txt`
-
-**Issue: "Port 8000 already in use"**
-
-Solution: Stop any running containers or services using port 8000.
+**"Port 8000 already in use"** — Stop whatever is using the port:
 ```bash
 docker-compose -f docker-compose.test.yml down
-docker stop housing-api  # If the main API is running
+docker stop housing-api
 ```
 
-**Issue: Test results not appearing in `test-results/` directory**
-
-Solution: Ensure the directory exists and has proper permissions.
-```bash
-mkdir -p test-results
-chmod 755 test-results
-```
-
-**Issue: Tests are very slow**
-
-Solution: Run unit tests only for faster feedback during development.
-```bash
-make test-unit  # Much faster than integration tests
-```
-
-**Issue: "Image not found" errors**
-
-Solution: Build the test image explicitly.
-```bash
-make test-build
-```
-
-### Cleaning Up
-
-Remove test containers and artifacts:
-```bash
-make clean
-```
-
-This removes:
-- All Docker containers created by docker-compose.test.yml
-- All test result files and coverage reports
-
-### Development Workflow
-
-For rapid development iteration:
-
-1. Make code changes in `src/` or test changes in `test/`
-2. Run unit tests: `make test-unit`
-3. Fix any issues and repeat
-4. Before committing, run full suite: `make test-all`
-
-The Docker setup mounts source code as volumes, so you don't need to rebuild containers for every change during integration testing.
+**Startup fails with `FileNotFoundError`** — The model artifacts and data files must exist.
+Confirm `src/model/model.pkl`, `src/model/model_features.json`, and the CSVs in `src/data/`
+are present (regenerate the model with the Step 2 commands if needed).
 
 ## Feedback
 
-We welcome any feedback regarding the project or the interview process. Your insights are valuable to us as we strive to improve the experience for future candidates.
+We welcome any feedback regarding the project or the interview process. Your insights are
+valuable to us as we strive to improve the experience for future candidates.
