@@ -1,92 +1,117 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sound Realty — Interactive Price Map</title>
+
+  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
         crossorigin="">
+
+  <!-- DaisyUI + Tailwind -->
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { brand: "#FF385C", brandDark: "#E00B41" },
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+
   <link rel="stylesheet" href="/static/css/directmap.css">
 </head>
-<body>
 
-<header class="app-header">
-  <h1>Sound Realty — Price Predictor</h1>
-  <p class="subtitle">Click the map to estimate a property's value</p>
-</header>
+<body class="h-screen bg-gray-50 text-gray-900 font-sans flex flex-col overflow-hidden">
 
-<main class="layout">
-
-  <!-- Map -->
-  <section class="map-container">
-    <div id="map"></div>
-  </section>
-
-  <!-- Controls panel -->
-  <aside class="controls-panel">
-
-    <!-- Location info -->
-    <div class="card location-card">
-      <h2>Location</h2>
-      <div class="location-grid">
-        <span class="label">Latitude</span>
-        <span id="info-lat" class="value">—</span>
-        <span class="label">Longitude</span>
-        <span id="info-lon" class="value">—</span>
-        <span class="label">ZIP Code</span>
-        <span id="info-zip" class="value">—</span>
-        <span class="label">City</span>
-        <span id="info-city" class="value">—</span>
-        <span class="label">State</span>
-        <span id="info-state" class="value">—</span>
-      </div>
-      <p id="geo-status" class="status-msg hidden"></p>
-    </div>
-
-    <!-- Sliders -->
-    <div class="card sliders-card">
-      <h2>Property Features</h2>
-
-      <div class="slider-group">
-        <label for="bedrooms">Bedrooms: <span id="bedrooms-val">3</span></label>
-        <input type="range" id="bedrooms" min="0" max="10" value="3" step="1">
-      </div>
-
-      <div class="slider-group">
-        <label for="bathrooms">Bathrooms: <span id="bathrooms-val">2</span></label>
-        <input type="range" id="bathrooms" min="0" max="8" value="2" step="1">
-      </div>
-
-      <div class="slider-group">
-        <label for="sqft_living">Living Area (sqft): <span id="sqft_living-val">1,500</span></label>
-        <input type="range" id="sqft_living" min="200" max="10000" value="1500" step="50">
-      </div>
-
-      <div class="slider-group">
-        <label for="sqft_lot">Lot Size (sqft): <span id="sqft_lot-val">5,000</span></label>
-        <input type="range" id="sqft_lot" min="500" max="100000" value="5000" step="100">
-      </div>
-
-      <div class="slider-group">
-        <label for="floors">Floors: <span id="floors-val">1</span></label>
-        <input type="range" id="floors" min="1" max="4" value="1" step="1">
+  <!-- Header -->
+  <header class="flex items-center gap-3 px-5 py-3 bg-white border-b border-gray-200 shadow-sm shrink-0">
+    <div class="flex items-center gap-2">
+      <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white font-bold">S</span>
+      <div class="leading-tight">
+        <h1 class="text-lg font-bold text-brand">Sound Realty</h1>
+        <p class="text-xs text-gray-500">Click the map to estimate a property's value</p>
       </div>
     </div>
+  </header>
 
-    <!-- Prediction result -->
-    <div class="card prediction-card">
-      <h2>Estimated House Price</h2>
-      <p id="prediction-value" class="price">—</p>
-      <p id="prediction-status" class="status-msg hidden"></p>
+  <!-- Main -->
+  <main class="flex-1 min-h-0 w-full max-w-7xl mx-auto p-4 flex flex-col lg:flex-row gap-4">
+
+    <!-- Map -->
+    <section class="lg:flex-1 h-[45vh] lg:h-full rounded-2xl overflow-hidden shadow-md ring-1 ring-gray-200">
+      <div id="map" class="w-full h-full"></div>
+    </section>
+
+    <!-- Controls -->
+    <aside class="lg:w-[400px] shrink-0 flex flex-col gap-4 overflow-y-auto pr-1">
+
+      <!-- Location -->
+      <div class="card bg-white shadow-md ring-1 ring-gray-200 rounded-2xl">
+        <div class="card-body p-5">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Location</h2>
+          <div class="grid grid-cols-2 gap-y-1.5 text-sm">
+            <span class="text-gray-500">Latitude</span>
+            <span id="info-lat" class="font-semibold text-right">—</span>
+            <span class="text-gray-500">Longitude</span>
+            <span id="info-lon" class="font-semibold text-right">—</span>
+            <span class="text-gray-500">ZIP Code</span>
+            <span id="info-zip" class="font-semibold text-right">—</span>
+            <span class="text-gray-500">City</span>
+            <span id="info-city" class="font-semibold text-right">—</span>
+            <span class="text-gray-500">State</span>
+            <span id="info-state" class="font-semibold text-right">—</span>
+          </div>
+          <p id="geo-status" class="hidden mt-2 text-xs rounded-lg px-2 py-1.5"></p>
+        </div>
+      </div>
+
+      <!-- Features -->
+      <div class="card bg-white shadow-md ring-1 ring-gray-200 rounded-2xl">
+        <div class="card-body p-5 gap-0">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Property Features</h2>
+
+          <div class="flex flex-col gap-3" id="features"></div>
+        </div>
+      </div>
+
+      <!-- Prediction -->
+      <div id="prediction-card" class="card bg-white shadow-md ring-2 ring-gray-200 rounded-2xl transition-colors">
+        <div class="card-body p-5 items-center text-center">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400">Estimated House Price</h2>
+          <p id="prediction-value" class="text-4xl font-extrabold text-brand mt-1">—</p>
+          <p id="prediction-status" class="hidden mt-1 text-xs rounded-lg px-2 py-1.5 w-full"></p>
+        </div>
+      </div>
+
+    </aside>
+  </main>
+
+  <!-- Feature row template -->
+  <template id="feature-template">
+    <div class="feature-group rounded-xl p-2 -mx-2 transition-colors">
+      <div class="flex items-center justify-between mb-1">
+        <label class="text-sm font-medium text-gray-700 feature-label"></label>
+        <span class="val-display text-sm font-semibold text-brand"></span>
+      </div>
+      <input type="range" class="feature-slider range range-sm w-full accent-brand">
+      <label class="mt-1.5 flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none w-fit">
+        <input type="checkbox" class="null-toggle checkbox checkbox-xs">
+        <span class="null-label">I don't know this value</span>
+      </label>
     </div>
+  </template>
 
-  </aside>
-</main>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-        crossorigin=""></script>
-<script src="/static/js/directmap.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin=""></script>
+  <script src="/static/js/directmap.js"></script>
 </body>
 </html>

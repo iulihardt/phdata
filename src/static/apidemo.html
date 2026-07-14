@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sound Realty — Live API Demo</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { brand: "#FF385C", brandDark: "#E00B41" },
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="/static/css/apidemo.css">
+</head>
+
+<body class="min-h-screen bg-gray-50 text-gray-900 font-sans flex flex-col">
+
+  <!-- Header -->
+  <header class="flex items-center justify-between px-5 py-3 bg-white border-b border-gray-200 shadow-sm shrink-0">
+    <div class="flex items-center gap-2">
+      <a href="/directmap" class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white font-bold text-sm hover:bg-brandDark transition">S</a>
+      <div class="leading-tight">
+        <h1 class="text-lg font-bold text-brand">Sound Realty</h1>
+        <p class="text-xs text-gray-500">Live API Demo &mdash; Single &amp; Batch prediction</p>
+      </div>
+    </div>
+    <a href="/directmap" class="btn btn-ghost btn-sm text-gray-500 text-xs gap-1">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+      Back to Map
+    </a>
+  </header>
+
+  <!-- Main grid -->
+  <main class="flex-1 w-full max-w-7xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+
+    <!-- ─── Single Predict ─────────────────────── -->
+    <section class="flex flex-col gap-4">
+      <div class="card bg-white shadow-md ring-1 ring-gray-200 rounded-2xl">
+        <div class="card-body p-5 gap-3">
+
+          <!-- Title + badge -->
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <h2 class="text-sm font-bold uppercase tracking-wider text-gray-600">Single Prediction</h2>
+            <span class="badge badge-outline font-mono text-xs">POST /predict</span>
+          </div>
+
+
+          <!-- Request editor -->
+          <textarea id="single-body" spellcheck="false"
+            class="textarea textarea-bordered font-mono text-xs leading-relaxed w-full h-52 resize-y bg-gray-50"
+          ></textarea>
+
+          <button type="button" id="btn-single" class="btn bg-brand hover:bg-brandDark text-white border-none btn-sm w-full">
+            Send request
+          </button>
+        </div>
+      </div>
+
+      <!-- Single result -->
+      <div id="single-result" class="hidden flex flex-col gap-4">
+
+        <!-- Status + timing -->
+        <div class="card bg-white shadow-md ring-1 ring-gray-200 rounded-2xl">
+          <div class="card-body p-5 gap-3">
+            <div class="flex items-center justify-between">
+              <span id="single-status" class="badge text-xs font-semibold"></span>
+              <span id="single-total" class="text-xs text-gray-400 font-mono"></span>
+            </div>
+
+            <!-- Timing bar -->
+            <div class="w-full h-5 rounded-full bg-gray-100 overflow-hidden flex" id="single-bar"></div>
+            <div class="flex gap-4 text-xs text-gray-500" id="single-timing-legend"></div>
+          </div>
+        </div>
+
+        <!-- Request & Response JSON -->
+        <div class="card bg-white shadow-md ring-1 ring-gray-200 rounded-2xl">
+          <div class="card-body p-5 gap-3">
+            <div class="tabs tabs-boxed bg-gray-100 p-0.5 rounded-lg">
+              <button class="tab tab-sm tab-active" data-panel="single" data-tab="response">Response</button>
+              <button class="tab tab-sm" data-panel="single" data-tab="request">Request</button>
+            </div>
+            <pre id="single-response-json" class="json-pre"></pre>
+            <pre id="single-request-json" class="json-pre hidden"></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── Batch Predict ──────────────────────── -->
+    <section class="flex flex-col gap-4">
+      <div class="card bg-white shadow-md ring-1 ring-gray-200 rounded-2xl">
+        <div class="card-body p-5 gap-3">
+
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <h2 class="text-sm font-bold uppercase tracking-wider text-gray-600">Batch Prediction</h2>
+            <span class="badge badge-outline font-mono text-xs">POST /predict/batch</span>
+          </div>
+
+          <textarea id="batch-body" spellcheck="false"
+            class="textarea textarea-bordered font-mono text-xs leading-relaxed w-full h-52 resize-y bg-gray-50"
+          ></textarea>
+
+          <button type="button" id="btn-batch" class="btn bg-brand hover:bg-brandDark text-white border-none btn-sm w-full">
+            Send batch
+          </button>
+        </div>
+      </div>
+
+      <!-- Batch result -->
+      <div id="batch-result" class="hidden flex flex-col gap-4">
+
+        <!-- Status + summary stats -->
+        <div class="card bg-white shadow-md ring-1 ring-gray-200 rounded-2xl">
+          <div class="card-body p-5 gap-3">
+            <div class="flex items-center justify-between">
+              <span id="batch-status" class="badge text-xs font-semibold"></span>
+              <span id="batch-total-time" class="text-xs text-gray-400 font-mono"></span>
+            </div>
+
+            <!-- Summary stats -->
+            <div class="flex gap-3" id="batch-stats"></div>
+
+            <!-- Timing bar -->
+            <div class="w-full h-5 rounded-full bg-gray-100 overflow-hidden flex" id="batch-bar"></div>
+            <div class="flex gap-4 text-xs text-gray-500" id="batch-timing-legend"></div>
+          </div>
+        </div>
+
+        <!-- Batch table -->
+        <div class="card bg-white shadow-md ring-1 ring-gray-200 rounded-2xl">
+          <div class="card-body p-5 gap-3">
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-400">Results per property</h3>
+            <div class="overflow-x-auto">
+              <table class="table table-sm table-zebra w-full text-xs">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Status</th>
+                    <th>Predicted Price</th>
+                    <th>Error</th>
+                  </tr>
+                </thead>
+                <tbody id="batch-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Batch JSON -->
+        <div class="card bg-white shadow-md ring-1 ring-gray-200 rounded-2xl">
+          <div class="card-body p-5 gap-3">
+            <div class="tabs tabs-boxed bg-gray-100 p-0.5 rounded-lg">
+              <button class="tab tab-sm tab-active" data-panel="batch" data-tab="response">Response</button>
+              <button class="tab tab-sm" data-panel="batch" data-tab="request">Request</button>
+            </div>
+            <pre id="batch-response-json" class="json-pre"></pre>
+            <pre id="batch-request-json" class="json-pre hidden"></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/static/js/apidemo.js"></script>
+</body>
+</html>

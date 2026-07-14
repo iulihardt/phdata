@@ -119,6 +119,7 @@ async def health_check():
     return {"status": "healthy"}
 
 
+# POST /predict MAIN function
 @router.post("/predict")
 async def predict(home_features: HomeFeatures, request: Request):
     """Accept home features and return a predicted price."""

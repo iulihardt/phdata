@@ -1,3 +1,4 @@
+python test/benchmark_api.py
 ============================================================
   Benchmark: 100 requests to POST /predict
 ============================================================
@@ -40,8 +41,9 @@ Load test (100 requests)...
     ============================================================
     ============================================================
     ============================================================
-    (ia_env) iulihardt@MacBook-Air-2 phdata-mle-project-challenge-2026-22ec952f6305 % python test/benchmark_api.py -n 3000
 
+
+(ia_env) iulihardt@MacBook-Air-2 phdata-mle-project-challenge-2026-22ec952f6305 % python test/benchmark_api.py -n 3000
 ============================================================
   Benchmark: 3000 requests to POST /predict
 ============================================================
@@ -80,4 +82,93 @@ Load test (3000 requests)...
     p99:        11.0
     Max:        49.2
     Stdev:       1.3
+============================================================
+
+
+After historys:
+
+
+
+python test/benchmark_api.py:
+============================================================
+  Benchmark: 100 requests to POST /predict
+============================================================
+
+Warmup (1 request)...
+  Warmup: 29.8 ms
+
+Single request test...
+  Response: {'predicted_price': 518190.0}
+  Latency:  5.2 ms
+
+Load test (100 requests)...
+  [ 10.0%] 10/100 done
+  [ 20.0%] 20/100 done
+  [ 30.0%] 30/100 done
+  [ 40.0%] 40/100 done
+  [ 50.0%] 50/100 done
+  [ 60.0%] 60/100 done
+  [ 70.0%] 70/100 done
+  [ 80.0%] 80/100 done
+  [ 90.0%] 90/100 done
+  [100.0%] 100/100 done
+
+============================================================
+  RESULTS
+============================================================
+  Requests:    100 total, 0 errors
+  Total time:  0.38 s
+  Throughput:  265.5 req/s
+
+  Latency (ms):
+    Min:         2.9
+    Mean:        3.7
+    Median:      3.7
+    p95:         4.5
+    p99:         5.2
+    Max:         5.2
+    Stdev:       0.5
+============================================================
+
+
+(ia_env) iulihardt@MacBook-Air-2 phdata-mle-project-challenge-2026-22ec952f6305 % python test/benchmark_api.py -n 3000
+
+============================================================
+  Benchmark: 3000 requests to POST /predict
+============================================================
+
+Warmup (1 request)...
+  Warmup: 19.3 ms
+
+Single request test...
+  Response: {'predicted_price': 518190.0}
+  Latency:  9.6 ms
+
+Load test (3000 requests)...
+  [ 10.0%] 300/3000 done
+  [ 20.0%] 600/3000 done
+  [ 30.0%] 900/3000 done
+  [ 40.0%] 1200/3000 done
+  [ 50.0%] 1500/3000 done
+  [ 60.0%] 1800/3000 done
+  [ 70.0%] 2100/3000 done
+  [ 80.0%] 2400/3000 done
+  [ 90.0%] 2700/3000 done
+  [100.0%] 3000/3000 done
+
+============================================================
+  RESULTS
+============================================================
+  Requests:    3000 total, 0 errors
+  Total time:  12.27 s
+  Throughput:  244.6 req/s
+
+  Latency (ms):
+    Min:         2.8
+    Mean:        4.0
+    Median:      4.0
+    p95:         4.8
+    p99:         5.7
+    Max:        11.8
+    Stdev:       0.5
 ============================================================
