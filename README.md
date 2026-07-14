@@ -27,6 +27,7 @@ The work is tracked as user stories under `AGIL/`. The following are delivered a
 | Code quality | Structured logging + global exception handling | US-3.3 |
 | Value-add | Interactive map page + reverse geocoding | US-6.1 |
 | Value-add | Batch prediction endpoint (`/predict/batch`) | US-6.3 |
+| Value-add | Live API demo page with timing breakdown (`/static/apidemo.html`) | — |
 
 A latency benchmark script is also included (`test/benchmark_api.py`), see [Benchmark](#benchmark).
 
@@ -39,6 +40,7 @@ A latency benchmark script is also included (`test/benchmark_api.py`), see [Benc
 | `POST` | `/predict/batch` | Predict prices for up to 100 properties in one request |
 | `GET`  | `/directmap` | Interactive Leaflet map UI for point-and-click estimation |
 | `GET`  | `/reverse-geocode` | Resolve a lat/lon into ZIP / city / state (Nominatim proxy) |
+| `GET`  | `/static/apidemo.html` | Live API demo page (single + batch with timing breakdown) |
 | `GET`  | `/docs` | Interactive OpenAPI (Swagger) documentation |
 
 ## Project Structure
@@ -58,8 +60,11 @@ phdata-mle-project-challenge-2026
 │   ├── templates
 │   │   └── directmap.html          # Jinja2 template for the map UI
 │   ├── static
-│   │   ├── css/directmap.css       # Map UI styles
-│   │   └── js/directmap.js         # Leaflet map, geocoding, debounced prediction
+    │   │   ├── apidemo.html            # Live API demo page (static, no backend changes)
+    │   │   ├── css/directmap.css       # Map UI styles
+    │   │   ├── css/apidemo.css         # API demo page styles (JSON highlight)
+    │   │   ├── js/directmap.js         # Leaflet map, geocoding, debounced prediction
+    │   │   └── js/apidemo.js           # API demo: fetch, timing, JSON rendering
 │   ├── model
 │   │   ├── create_model.py         # Trains the model and exports artifacts
 │   │   ├── Dockerfile              # Image used to (re)generate model artifacts
@@ -128,6 +133,7 @@ docker run -d -p 8000:8000 --name housing-api phdata-mle-api
 
 - Interactive docs (Swagger): `http://127.0.0.1:8000/docs`
 - Interactive map UI: `http://127.0.0.1:8000/directmap`
+- Live API demo (single + batch): `http://127.0.0.1:8000/static/apidemo.html`
 - Health check: `http://127.0.0.1:8000/health`
 
 ### Managing the Container
@@ -234,6 +240,25 @@ A failed item looks like:
 ```json
 {"index": 1, "predicted_price": null, "status": "error", "error": "zipcode not found"}
 ```
+
+### Live API demo — `/static/apidemo.html`
+
+Open `http://127.0.0.1:8000/static/apidemo.html` in a browser. This page is designed for live
+presentations to technical stakeholders. It provides:
+
+- **Single prediction panel** — editable JSON request body with preset buttons ("Full data" and
+  "Missing data"). Click "Send request" to `POST /predict` and see the full response with
+  syntax-highlighted JSON.
+- **Batch prediction panel** — editable JSON body pre-filled with 3 properties (one complete,
+  one with nulls for imputation, one with an invalid ZIP code to demonstrate per-item error
+  handling). Click "Send batch" to `POST /predict/batch` and see a results table plus the
+  full JSON response.
+- **Timing breakdown** — each request shows a stacked bar: **Backend** (server TTFB via
+  Resource Timing API), **Transfer**, and **Frontend** (JSON parse + DOM render), with
+  millisecond values. This lets the audience see where time is spent without opening a terminal.
+
+The page is a static HTML/JS/CSS file served by the existing `/static` mount — no backend
+changes are needed.
 
 ### Interactive map — `GET /directmap`
 
