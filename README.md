@@ -77,6 +77,7 @@ phdata-mle-project-challenge-2026
 ├── test
 │   ├── unit/                       # In-process TestClient tests (fast)
 │   ├── integration/                # Tests against a live API container
+│   ├── validate_future_unseen_examples.ipynb  # Imputation validation on 100 unseen rows
 │   ├── conftest.py                 # Shared fixtures
 │   └── benchmark_api.py            # Latency/throughput benchmark script
 ├── requirements.txt                # Runtime dependencies (pinned)
@@ -282,6 +283,44 @@ prediction updates in real time as you adjust the property sliders (no "Predict"
 
 All resources (model, feature list, demographics, fitted imputer) are loaded **once at startup**
 and held in memory, so requests incur no disk I/O.
+
+## Imputation Validation
+
+We validated the KNN imputation against the 100 rows of `src/data/future_unseen_examples.csv`
+using the **real prediction pipeline** (the same `PredictionService` the API runs), not a
+reimplementation. See the notebook: `test/validate_future_unseen_examples.ipynb`.
+
+**Headline result:**
+
+> **Filling in missing data changes the predicted price by only ~6% on average.**
+> For these 100 rows, when data is missing the predicted price lands, on average, at **94% of
+> the price the model would produce with complete data.**
+
+### What the notebook checks
+
+| Validation | What it checks | Result |
+|------------|----------------|--------|
+| 1. Full pipeline | Every row produces a valid price | **100/100 success** |
+| 2. Realistic range | Prices fall within \$50k–\$5M (Seattle plausibility) | **100/100 in range** (actual $184k–$1.24M) |
+| 3. Missing-data robustness | API still responds with `bathrooms`, `sqft_lot`, `sqft_basement` nulled on every row | **100/100 success** |
+| 4. Reasonableness | `partial / complete` price ratio stays within 0.5x–1.5x | **100/100 within tolerance** |
+| **KPI** | **Imputation accuracy** = `100% − MAPE(partial vs. complete)` | **94.3% mean / 98.0% median** |
+
+**Method (how we reached the conclusion):** for each property we predict twice, once with all
+fields present (the reference), and once with three fields nulled so the KNN imputer must fill
+them. The KPI is the mean absolute percentage difference between the two predicted prices,
+inverted into an accuracy figure.
+
+> Note on interpretation: the reference here is the *complete-data prediction*, not the actual
+> sale price (which `future_unseen_examples.csv` does not contain). So the KPI measures how
+> faithful the imputed prediction stays to the model's own output — i.e. how little imputation
+> perturbs the result — not error against the real market.
+
+**Reproduce it:**
+```bash
+jupyter nbconvert --to notebook --execute --inplace \
+  test/validate_future_unseen_examples.ipynb
+```
 
 ## Testing
 
